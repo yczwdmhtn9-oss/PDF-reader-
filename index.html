@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDF Reader</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+body {
+  font-family: Arial, sans-serif;
+  padding: 20px;
+  max-width: 700px;
+  margin: auto;
+  background: #f7f7f7;
+  color: #222;
+}
+button, select, input {
+  margin: 6px 3px;
+  padding: 12px;
+  font-size: 16px;
+}
+button { cursor: pointer; }
+#text {
+  background: white;
+  padding: 18px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  border-radius: 8px;
+  margin-top: 20px;
+}
+#status { font-size: 14px; color: #555; }
+</style>
+</head>
+<body>
+<h2>PDF Reader</h2>
+<input type="file" id="file" accept=".pdf,application/pdf">
+<p id="status">Choose a PDF to begin.</p>
+<hr>
+
+Voice:
+<br>
+
+Speed:
+1x
+
+<br>
+
+▶ Play
+Ⅱ Pause
+■ Stop
+← Previous paragraph
+Next paragraph →
+
+<p id="progress"></p>
+<div id="text">Your PDF text will appear here.</div>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+let paragraphs = [];
+let current = 0;
+let voices = [];
+let activeUtterance = null;
+let playing = false;
+const status = document.getElementById("status");
+const display = document.getElementById("text");
+const voiceSelect = document.getElementById("voice");
+function loadVoices() {
+  voices = speechSynthesis.getVoices();
+  voiceSelect.innerHTML = "";
+  voices.forEach((voice, index) => {
+    const option = document.createElement("option");
+    option.value = index;
+    option.textContent = voice.name + " (" + voice.lang + ")";
+    voiceSelect.appendChild(option);
+  });
+}
+loadVoices();
+speechSynthesis.onvoiceschanged = loadVoices;
+document.getElementById("speed").oninput = function() {
+  document.getElementById("speedValue").textContent =
+    this.value + "x";
+};
+document.getElementById("file").onchange = async function(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  stopReading();
+  paragraphs = [];
+  current = 0;
+  status.textContent = "Loading PDF...";
+  display.textContent = "";
+  try {
+    const buffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({
+      data: new Uint8Array(buffer)
+    }).promise;
+    let allText = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      status.textContent =
+        "Extracting page " + i + " of " + pdf.numPages + "...";
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const pageText = content.items
+        .filter(item => item.str && item.str.trim())
+        .map(item => item.str)
+        .join(" ");
+      allText.push(pageText);
+    }
+    paragraphs = allText
+      .join("\n\n")
+      .split(/\n\s*\n/)
+      .flatMap(block => {
+        const sentences = block.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [block];
+        let chunks = [];
+        let chunk = "";
+        sentences.forEach(sentence => {
+          if ((chunk + sentence).length > 800 && chunk) {
+            chunks.push(chunk.trim());
+            chunk = sentence;
+          } else {
+            chunk += sentence;
+          }
+        });
+        if (chunk.trim()) chunks.push(chunk.trim());
+        return chunks;
+      })
+      .filter(p => p.trim());
+    display.textContent = paragraphs.join("\n\n");
+    status.textContent =
+      "Loaded " + pdf.numPages + " pages. " +
+      paragraphs.length + " reading sections.";
+    updateProgress();
+  } catch (error) {
+    status.textContent = "Error reading PDF: " + error.message;
+  }
+};
+function updateProgress() {
+  document.getElementById("progress").textContent =
+    paragraphs.length
+      ? "Section " + (current + 1) + " of " + paragraphs.length
+      : "";
+}
+function speak() {
+  if (!paragraphs.length || current >= paragraphs.length) {
+    status.textContent = "Import a PDF first.";
+    return;
+  }
+  speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(
+    paragraphs[current]
+  );
+  utterance.rate = parseFloat(
+    document.getElementById("speed").value
+  );
+  const selectedVoice = voices[voiceSelect.value];
+  if (selectedVoice) utterance.voice = selectedVoice;
+  activeUtterance = utterance;
+  playing = true;
+  utterance.onend = function() {
+    if (activeUtterance !== utterance) return;
+    current++;
+    updateProgress();
+    if (current < paragraphs.length && playing) {
+      speak();
+    } else {
+      playing = false;
+      status.textContent = "Finished reading.";
+    }
+  };
+  utterance.onerror = function(event) {
+    if (activeUtterance === utterance) {
+      playing = false;
+      status.textContent = "Speech error: " + event.error;
+    }
+  };
+  speechSynthesis.speak(utterance);
+  status.textContent = "Reading...";
+}
+function stopReading() {
+  playing = false;
+  activeUtterance = null;
+  speechSynthesis.cancel();
+}
+document.getElementById("play").onclick = function() {
+  if (!paragraphs.length) {
+    status.textContent = "Import a PDF first.";
+    return;
+  }
+  if (current >= paragraphs.length) current = 0;
+  if (speechSynthesis.paused) {
+    speechSynthesis.resume();
+    playing = true;
+    status.textContent = "Reading...";
+  } else {
+    speak();
+  }
+};
+document.getElementById("pause").onclick = function() {
+  speechSynthesis.pause();
+  status.textContent = "Paused.";
+};
+document.getElementById("stop").onclick = stopReading;
+document.getElementById("next").onclick = function() {
+  stopReading();
+  current = Math.min(current + 1, paragraphs.length - 1);
+  updateProgress();
+  speak();
+};
+document.getElementById("prev").onclick = function() {
+  stopReading();
+  current = Math.max(current - 1, 0);
+  updateProgress();
+  speak();
+};
+</script>
+</body>
+</html>
