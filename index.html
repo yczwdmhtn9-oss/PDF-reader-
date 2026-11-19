@@ -73,6 +73,7 @@ let current = 0;
 let voices = [];
 let activeUtterance = null;
 let playing = false;
+let playbackSession = 0;
 const status = document.getElementById("status");
 const display = document.getElementById("text");
 const voiceSelect = document.getElementById("voice");
@@ -152,44 +153,56 @@ function updateProgress() {
       : "";
 }
 function speak() {
-  if (!paragraphs.length || current >= paragraphs.length) {
-    status.textContent = "Import a PDF first.";
-    return;
+if (!paragraphs.length || current >= paragraphs.length) {
+status.textContent = “Import a PDF first.”;
+return;
+}
+
+speechSynthesis.cancel();
+
+playing = true;
+
+const session = ++playbackSession;
+
+for (let i = current; i < paragraphs.length; i++) {
+
+const utterance = new SpeechSynthesisUtterance(paragraphs[i]);
+utterance.rate = parseFloat(
+  document.getElementById("speed").value
+);
+const selectedVoice = voices[voiceSelect.value];
+if (selectedVoice) utterance.voice = selectedVoice;
+utterance.onstart = function() {
+  if (session !== playbackSession) return;
+  current = i;
+  updateProgress();
+};
+utterance.onend = function() {
+  if (session !== playbackSession) return;
+  current = i + 1;
+  updateProgress();
+  if (current >= paragraphs.length) {
+    playing = false;
+    status.textContent = "Finished reading.";
   }
-  speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(
-    paragraphs[current]
-  );
-  utterance.rate = parseFloat(
-    document.getElementById("speed").value
-  );
-  const selectedVoice = voices[voiceSelect.value];
-  if (selectedVoice) utterance.voice = selectedVoice;
-  activeUtterance = utterance;
-  playing = true;
-  utterance.onend = function() {
-    if (activeUtterance !== utterance) return;
-    current++;
-    updateProgress();
-    if (current < paragraphs.length && playing) {
-      speak();
-    } else {
-      playing = false;
-      status.textContent = "Finished reading.";
-    }
-  };
-  utterance.onerror = function(event) {
-    if (activeUtterance === utterance) {
-      playing = false;
-      status.textContent = "Speech error: " + event.error;
-    }
-  };
-  speechSynthesis.speak(utterance);
-  status.textContent = "Reading...";
+};
+utterance.onerror = function(event) {
+  if (session !== playbackSession) return;
+  if (event.error !== "canceled" &&
+      event.error !== "interrupted") {
+    playing = false;
+    status.textContent = "Speech error: " + event.error;
+  }
+};
+speechSynthesis.speak(utterance);
+
+}
+
+status.textContent = “Reading…”;
 }
 function stopReading() {
   playing = false;
-  activeUtterance = null;
+  playbackSession++;
   speechSynthesis.cancel();
 }
 document.getElementById("play").onclick = function() {
