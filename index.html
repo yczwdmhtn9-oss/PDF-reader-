@@ -37,21 +37,33 @@ button { cursor: pointer; }
 <p id="status">Choose a PDF to begin.</p>
 <hr>
 
-Voice:
-<br>
+<label>Voice:</label>
 
-Speed:
-1x
+<select id="voice"></select>
 
 <br>
 
-▶ Play
-Ⅱ Pause
-■ Stop
-← Previous paragraph
-Next paragraph →
+<label>Speed:</label>
 
-<p id="progress"></p>
+<input type="range" id="speed"
+
+min="0.5" max="2" step="0.1" value="1">
+
+<span id="speedValue">1x</span>
+
+<br>
+
+<button id="play">▶ Play</button>
+
+<button id="pause">Ⅱ Pause</button>
+
+<button id="stop">■ Stop</button>
+
+<br>
+
+<button id="prev">← Previous paragraph</button>
+
+<button id="next">Next paragraph →</button>
 <div id="text">Your PDF text will appear here.</div>
 <script>
 pdfjsLib.GlobalWorkerOptions.workerSrc =
